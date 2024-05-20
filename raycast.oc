@@ -1,0 +1,565 @@
+import std::og
+import std::vec::{ Vec2f, Vec2i }
+import std::math
+import std::image::{ Image }
+
+@compiler c_flag "-Ofast"
+
+// Rendering
+const NUM_RAYS: i32 = 512
+
+// Gameplay
+const MOVE_SPEED: f32 = 4.0
+const TURN_SPEED: f32 = 3.0
+const MOUSE_TURN_MULTIPLIER: f32 = 0.15
+const FOV_ZOOM_FACTOR: f32 = 1.1
+
+const JUMP_VEL: f32 = 4.0
+const JUMP_TIME: f32 = 1.0
+
+const GRAVITY: f32 = (4.0 * JUMP_VEL) / JUMP_TIME
+
+// UI Map
+const CELL_HIGHIGHT_THICKNESS: i32 = 5
+const CELL_HIGHIGHT_LENGTH: i32 = 10
+
+
+
+/// Other constants
+const EPS: f32 = 0.0001
+
+enum CellType {
+    Empty
+    Wall
+}
+
+enum Direction {
+    Vertical
+    Horizontal
+}
+
+struct Game {
+    rows: u32,
+    cols: u32,
+    grid_size: u32,
+    grid: &CellType
+    angle: f32
+    fov: f32
+
+    pos: Vec2f
+    jump: f32
+    up_vel: f32
+
+    map_enabled: bool
+
+    wall_img: &Image
+    ground_img: &Image
+
+    tx: &og::Texture
+}
+
+def Game::make(rows: u32, cols: u32, grid_size: u32): Game {
+    let grid = std::mem::alloc<CellType>(rows * cols)
+    let game = Game(
+        rows: rows,
+        cols: cols,
+        grid_size: grid_size,
+        grid: grid,
+        angle: 0.0,
+        fov: math::radians(60.0),
+
+        pos: Vec2f(rows as f32/2.0, cols as f32/2.0),
+        jump: 0.0,
+        up_vel: 0.0,
+
+        map_enabled: false,
+        wall_img: null,
+        ground_img: null,
+
+        tx: null
+    )
+    for let i = 0; i < game.rows; i++ {
+        game.set_cell(i, 0, Wall)
+        game.set_cell(i, game.cols - 1, Wall)
+    }
+    for let i = 0; i < game.cols; i++ {
+        game.set_cell(0, i, Wall)
+        game.set_cell(game.rows - 1, i, Wall)
+    }
+    game.set_cell(11, 11, Wall)
+    game.set_cell(12, 12, Wall)
+    game.set_cell(13, 13, Wall)
+    game.set_cell(2, 2, Wall)
+    game.set_cell(2, 3, Wall)
+    game.set_cell(2, 4, Wall)
+    game.set_cell(2, 5, Wall)
+
+    game.wall_img = Image::load("assets/stone.png")
+    game.ground_img = Image::load("assets/ground.png")
+
+    return game
+}
+
+def Game::draw(&this) {
+    if not .map_enabled then return
+
+    for let i = 0; i < .rows; i++ {
+        for let j = 0; j < .cols; j++ {
+            let cell = .grid[i * .cols + j]
+            let loc = .to_screen(Vec2f(j as f32, i as f32))
+            og::draw_rect(
+                loc.x as i32,
+                loc.y as i32,
+                .get_cell_size() as i32 - 1,
+                .get_cell_size() as i32 - 1,
+                match cell {
+                    Empty => og::Color(0, 0, 0, 255)
+                    Wall => og::Color(255, 255, 255, 255),
+                }
+            )
+        }
+    }
+    if 0.0 <= .pos.x < .cols as f32 and 0.0 <= .pos.y < .rows as f32 {
+        og::draw_rect_v(
+            .to_screen(.pos).to_i32() - 5i32,
+            Vec2i(10, 10),
+            og::Color(255, 0, 0, 255)
+        )
+        let to = .pos + Vec2f(0.5, 0.0).rotate(.angle)
+        .draw_ray(.pos, to, og::Color(255, 0, 0, 255))
+    }
+}
+
+def Game::set_cell(&this, row: u32, col: u32, cell: CellType) {
+    .grid[row * .cols + col] = cell
+}
+
+
+def Game::ray_check_intersection(
+    &this, x: f32, y: f32, dx: f32, dy: f32,
+    // Output params
+    dist: &f32, cell_idx: &u32,
+    steps: u32
+): bool {
+    for let i = 0; i < steps; i++ {
+        let cx = x as i32
+        let cy = y as i32
+        if 0i32 <= cx < .cols as i32 and 0i32 <= cy < .rows as i32 {
+            let idx = cy * (.cols as i32) + cx
+            let cell = .grid[idx]
+            if cell == Wall {
+                let hit_pos = Vec2f(x, y)
+                let t = (hit_pos - .pos).length()
+                if t < *dist {
+                    *dist = t
+                    *cell_idx = idx as u32
+                    return true
+                } else {
+                    return false
+                }
+            }
+        }
+        x += dx
+        y += dy
+    }
+    return false
+}
+
+def Game::draw_ray(&this, v0: Vec2f, v1: Vec2f, color: og::Color) {
+    if not (0.0 <= v0.x < .cols as f32 and 0.0 <= v0.y < .rows as f32) {
+        return
+    }
+
+    // clamp v1 to be within left half of the screen
+    if v1.x < 0.0 {
+        v1 = v0 + (v1 - v0).normalized() * v0.x
+    }
+    if v1.x >= .cols as f32 {
+        v1 = v0 + (v1 - v0).normalized() * (.cols as f32 - v0.x)
+    }
+    if v1.y < 0.0 {
+        v1 = v0 + (v1 - v0).normalized() * v0.y
+    }
+    if v1.y >= .rows as f32 {
+        v1 = v0 + (v1 - v0).normalized() * (.rows as f32 - v0.y)
+    }
+
+    og::draw_line_v(
+        .to_screen(v0).to_i32(),
+        .to_screen(v1).to_i32(),
+        color
+    )
+}
+
+def Game::check_ray(&this, i: i32, angle: f32) {
+    // Better approach: Iterate over grid lines
+    let dir = Vec2f(1.0, 0.0).rotate(angle)
+    let tan = angle.tan()
+
+    let hit = false
+    let hit_dist = f32::inf()
+    let hit_side: Direction
+    let hit_idx: u32
+
+    { // Vertical lines (moving horizontally)
+        let x = 0.0
+        let dx = if {
+            dir.x > 0.0 => {
+                x = .pos.x.ceil()
+                yield 1.0 + EPS
+            }
+            dir.x < 0.0 => {
+                x = .pos.x.floor() - EPS
+                yield -1.0 - EPS
+            }
+            else => 0.0
+        }
+        if dx != 0.0 {
+            let dy = dx * tan
+            let y = .pos.y + (x - .pos.x) * tan
+            if .ray_check_intersection(x, y, dx, dy, &hit_dist, &hit_idx, .cols) {
+                hit = true
+                hit_side = Vertical
+            }
+        }
+    }
+    { // Horizontal lines (moving vertically)
+        let y = 0.0
+        let dy = if {
+            dir.y > 0.0 => {
+                y = .pos.y.ceil()
+                yield 1.0 + EPS
+            }
+            dir.y < 0.0 => {
+                y = .pos.y.floor() - EPS
+                yield -1.0 - EPS
+            }
+            else => 0.0
+        }
+        if dy != 0.0 {
+            let dx = dy / tan
+            let x = .pos.x + (y - .pos.y) / tan
+            if .ray_check_intersection(x, y, dx, dy, &hit_dist, &hit_idx, .cols) {
+                hit = true
+                hit_side = Horizontal
+            }
+        }
+    }
+
+    let hit_pos = .pos + dir * hit_dist
+
+    // Just draw the ray on the map
+    if .map_enabled {
+        if hit then .draw_ray(.pos, hit_pos, og::Color(0, 255, 0, 255))
+        return
+    }
+
+    // Draw the actual ray-casted lines
+    let window_size = og::get_window_size()
+
+    let screen_height = window_size.y
+    let screen_width = window_size.x
+
+    let col = (i as f32 / NUM_RAYS as f32 * screen_width as f32) as i32
+    let width = (screen_width as f32 / NUM_RAYS as f32).ceil().max(1.0) as i32
+    let height = if {
+        hit => (screen_height as f32 / hit_dist / f32::cos(angle - .angle)).ceil() as i32
+        else => 0i32
+    }
+    let jump_height = (.jump * screen_height as f32 / hit_dist / f32::cos(angle - .angle)) as i32
+
+    let x0 = col.max(0)
+    width = width.min(screen_width as i32)
+
+    let y0 = screen_height as i32 / 2 - height / 2 + jump_height
+    height = height
+
+    let u = 0.0
+    let brightness = 1.0
+    match hit_side {
+        Vertical => {
+            u = hit_pos.y.mod(1.0).abs()
+            if dir.x < 0.0 then u = 1.0 - u
+            brightness = 0.8
+        }
+        Horizontal => {
+            u = hit_pos.x.mod(1.0).abs()
+            if dir.y > 0.0 then u = 1.0 - u
+            brightness = 0.5
+        }
+    }
+
+    // Draw walls
+    if hit {
+        let cell = .grid[hit_idx]
+        let tex: &Image = match cell {
+            Wall => .wall_img
+            Empty => null
+        }
+
+        let start = 0i32
+        if y0 < 0 {
+            start = -y0
+        }
+
+        for let dy = start; dy < height; dy += width {
+            let y = y0 + dy
+            if y >= screen_height as i32 break
+
+            let v = (dy as f32 / height as f32).abs()
+            let color = if {
+                tex? => {
+                    let c = tex.get(
+                        (u * (tex.width-1) as f32) as u32,
+                        (v * (tex.height-1) as f32) as u32,
+                    )
+                    yield og::Color(
+                        (c.r as f32 * brightness) as i32,
+                        (c.g as f32 * brightness) as i32,
+                        (c.b as f32 * brightness) as i32,
+                        255
+                    )
+                }
+                else => og::Color(
+                    (u*255.0 * brightness) as i32,
+                    (v*255.0 * brightness) as i32,
+                    (0.0     * brightness) as i32,
+                    255
+                )
+            }
+            .tx.draw_rect(x0, y, width, width, color)
+        }
+    }
+
+
+    // Draw ground
+
+    // FIXME: Remove magic number and figure out how to compute it
+    //        based on FOV and screen size
+    let view_distance = (0.5 + .jump) / (.angle - angle).mod(math::TAU).cos()
+    let weight = view_distance * screen_height as f32
+    let deg = -angle
+
+
+    for let y = y0 + height; y < screen_height as i32; y++ {
+
+        let dy = y as f32 - screen_height as f32 / 2.0
+        let tx = (.pos.x as f32 + deg.cos() * weight / dy)
+        let ty = (.pos.y as f32 - deg.sin() * weight / dy)
+
+        let cell_row = ty as i32
+        let cell_col = tx as i32
+
+        // TODO: Have floor map, and pick texture based on cell
+
+        let u = (tx - cell_col as f32).abs()
+        let v = (ty - cell_row as f32).abs()
+
+        let c = .ground_img.get(
+            (u * (.ground_img.width-1) as f32) as u32,
+            (v * (.ground_img.height-1) as f32) as u32,
+        )
+        .tx.draw_rect(x0, y, width, 1, og::Color(c.r as i32, c.g as i32, c.b as i32, 255))
+    }
+}
+
+def Game::to_screen(&this, v: Vec2f): Vec2i {
+    let cell_size = .get_cell_size() as f32
+    // `.cols` and `.rows` are the number of cells in the grid
+    // Center the grid in the window
+    let res = (v * cell_size).to_i32()
+
+    let window_sz = og::get_window_size()
+
+    let grid_width = .cols as f32 * cell_size
+    let grid_height = .rows as f32 * cell_size
+    if grid_width < window_sz.x as f32 {
+        res.x += (window_sz.x as f32 - grid_width) as i32 / 2
+    }
+    if grid_height < window_sz.y as f32 {
+        res.y += (window_sz.y as f32 - grid_height) as i32 / 2
+    }
+    return res
+}
+
+def Game::cast_rays(&this) {
+    let start_angle = .angle - .fov / 2.0
+    let angle_step = .fov / NUM_RAYS as f32
+
+    for let i = 0i32; i < NUM_RAYS; i++ {
+        let angle = start_angle + i as f32 * angle_step
+        .check_ray(i, angle)
+    }
+}
+
+def Game::get_cell_size(&this): i32 {
+    let window_size = og::get_window_size()
+    let col_size = window_size.x / .cols as i32
+    let row_size = window_size.y / .rows as i32
+    return col_size.min(row_size) as i32
+}
+
+def Game::highlight_cell(&this, row: u32, col: u32) {
+    if not .map_enabled return
+
+    let pos = .to_screen(Vec2f(col as f32, row as f32))
+    let x = pos.x as i32
+    let y = pos.y as i32
+    let N = .get_cell_size() as i32
+
+    let T = CELL_HIGHIGHT_THICKNESS
+    let L = CELL_HIGHIGHT_LENGTH
+
+    // Draw right angles on each corner
+    og::draw_rect(x-T, y-T, T, L, og::Color(255, 0, 0, 255))
+    og::draw_rect(x-T, y-T, L, T, og::Color(255, 0, 0, 255))
+
+    og::draw_rect(x+N-L+T, y-T, L, T, og::Color(255, 0, 0, 255))
+    og::draw_rect(x+N    , y-T, T, L, og::Color(255, 0, 0, 255))
+
+    og::draw_rect(x-T, y+N-L+T, T, L, og::Color(255, 0, 0, 255))
+    og::draw_rect(x-T, y+N    , L, T, og::Color(255, 0, 0, 255))
+
+    og::draw_rect(x+N-L+T, y+N    , L, T, og::Color(255, 0, 0, 255))
+    og::draw_rect(x+N    , y+N-L+T, T, L, og::Color(255, 0, 0, 255))
+}
+
+def Game::toggle_cell(&this, row: u32, col: u32) {
+    let cell = .grid[row * .cols + col]
+    .grid[row * .cols + col] = match cell {
+        Empty => Wall
+        Wall => Empty
+    }
+}
+
+def Game::to_world(&this, v: Vec2i): Vec2f {
+    let window_size = og::get_window_size()
+    let cell_size = .get_cell_size() as f32
+    let grid_width = .cols as f32 * cell_size
+    let grid_height = .rows as f32 * cell_size
+
+    if grid_width < window_size.x as f32 {
+        v.x -= (window_size.x as f32 - grid_width) as i32 / 2
+    }
+    if grid_height < window_size.y as f32 {
+        v.y -= (window_size.y as f32 - grid_height) as i32 / 2
+    }
+
+    return v.to_f32() / cell_size
+}
+
+def Game::get_cell_or_empty(&this, x: i32, y: i32): CellType {
+    if 0i32 <= x < .cols as i32 and 0i32 <= y < .rows as i32 {
+        return .grid[y * .cols as i32 + x]
+    }
+    return Empty
+}
+
+def Game::move(&this, angle_off: f32, dt: f32) {
+    let dir = Vec2f(1.0, 0.0).rotate(.angle + angle_off)
+
+    let pos = .pos.to_i32()
+    let tgt = (.pos + dir * 0.2).to_i32()
+
+    if .get_cell_or_empty(pos.x, tgt.y) == Empty {
+        .pos.y += dir.y * MOVE_SPEED * dt
+    }
+    if .get_cell_or_empty(tgt.x, pos.y) == Empty {
+        .pos.x += dir.x * MOVE_SPEED * dt
+    }
+}
+
+def Game::step(&this): bool {
+    let dt = og::get_frame_time()
+    if og::is_key_pressed(Escape) return false
+
+    let mouse_delta = og::get_mouse_delta()
+    if not .map_enabled {
+        .angle += mouse_delta.x as f32 * TURN_SPEED * MOUSE_TURN_MULTIPLIER * dt
+    }
+
+    import std::math::{ PI }
+
+    if og::is_key_down(W) then .move(    0.0, dt)
+    if og::is_key_down(S) then .move(     PI, dt)
+    if og::is_key_down(A) then .move(-PI/2.0, dt)
+    if og::is_key_down(D) then .move( PI/2.0, dt)
+
+    if og::is_key_down(F) then og::toggle_fullscreen()
+
+    if og::is_key_down(Left)  then .angle -= TURN_SPEED * dt
+    if og::is_key_down(Right) then .angle += TURN_SPEED * dt
+
+    // Alias up/down to forward/backward
+    if og::is_key_down(Up) then   .move(0.0, dt)
+    if og::is_key_down(Down) then .move( PI, dt)
+
+    if og::is_key_down(Comma) then .fov += (.fov * FOV_ZOOM_FACTOR) * dt
+    if og::is_key_down(Dot) then .fov -= (.fov / FOV_ZOOM_FACTOR) * dt
+
+    if og::is_key_pressed(M) {
+        .map_enabled = not .map_enabled
+        if .map_enabled {
+            og::grab_input(false)
+            og::show_cursor(true)
+        } else {
+            og::grab_input(true)
+            og::show_cursor(false)
+        }
+    }
+
+    if og::is_key_pressed(Space) and .jump == 0.0 then .up_vel += JUMP_VEL
+
+    .jump += .up_vel * dt
+    .up_vel -= GRAVITY * dt
+
+    if .jump <= 0.0 then {
+        .jump = 0.0
+        .up_vel = 0.0
+    }
+
+    og::clear(og::Color(24, 24, 24, 255))
+
+    // NOTE: If the map is enabled - we draw directly to the screen using
+    //       the native functions. We're drawing shapes, and this is faster.
+    //       If we're drawing the actual game, it's faster to draw to a texture
+    //       and then draw the texture to the screen.
+    if not .map_enabled {
+        .tx = og::get_buffer()
+        // Set background to 0x181818
+        std::libc::memset(.tx.pixels, 0x18, (.tx.pitch * .tx.h) as u32)
+    }
+
+    .draw()
+    .cast_rays()
+
+    let mouse = .to_world(og::get_mouse_pos())
+    if 0.0 <= mouse.x < .cols as f32 and 0.0 <= mouse.y < .rows as f32 {
+        let row = mouse.y as u32
+        let col = mouse.x as u32
+        .highlight_cell(row, col)
+        if og::is_mouse_pressed(Left) {
+            .toggle_cell(row, col)
+        }
+    }
+
+    if not .map_enabled {
+        og::draw_buffer()
+    }
+
+    return true
+}
+
+let game: Game
+def step(): bool => game.step()
+
+def main() {
+    game = Game::make(20, 20, 0)
+    og::init(960, 640, "RayCast")
+    og::grab_input(true)
+    og::show_cursor(false)
+    og::set_main_loop(step)
+    og::quit()
+}
+
+

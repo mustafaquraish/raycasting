@@ -1,0 +1,39 @@
+# Build Workflow
+name: build
+
+# Run on Push
+on: [push]
+
+
+jobs:
+  build:
+    # Run this on a default linux machine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+
+      - uses: mymindstorm/setup-emsdk@v11
+
+      - name: Checkout ocen repo
+        uses: actions/checkout@v3
+        with:
+          repository: ocen-lang/ocen
+          path: ocen
+
+      - name: Build ocen
+        run: |
+          cd ocen
+          ./meta/bootstrap.sh
+          echo "OCEN_ROOT=${{ github.workspace }}/ocen" >> $GITHUB_ENV
+          echo "${{ github.workspace }}/ocen/bootstrap" >> $GITHUB_PATH
+
+      - name: Build Wasm
+        run: |
+          cd ${{ github.workspace }}
+          ./meta/build_wasm.sh
+
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@4.1.0
+        with:
+          branch: gh-pages # The branch the action should deploy to.
+          folder: build
