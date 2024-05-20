@@ -533,13 +533,15 @@ def Game::step(&this): bool {
     .draw()
     .cast_rays()
 
-    let mouse = .to_world(og::get_mouse_pos())
-    if 0.0 <= mouse.x < .cols as f32 and 0.0 <= mouse.y < .rows as f32 {
-        let row = mouse.y as u32
-        let col = mouse.x as u32
-        .highlight_cell(row, col)
-        if og::is_mouse_pressed(Left) {
-            .toggle_cell(row, col)
+    if .map_enabled {
+        let mouse = .to_world(og::get_mouse_pos())
+        if 0.0 <= mouse.x < .cols as f32 and 0.0 <= mouse.y < .rows as f32 {
+            let row = mouse.y as u32
+            let col = mouse.x as u32
+            .highlight_cell(row, col)
+            if og::is_mouse_pressed(Left) {
+                .toggle_cell(row, col)
+            }
         }
     }
 
