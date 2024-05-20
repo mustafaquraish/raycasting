@@ -634,7 +634,6 @@ std_vec_Vec2__1 Game_to_world(Game *this, std_vec_Vec2__3 v);
 CellType Game_get_cell_or_empty(Game *this, i32 x, i32 y);
 void Game_move(Game *this, f32 angle_off, f32 dt);
 bool Game_step(Game *this);
-bool step(void);
 i32 main(void);
 void std_panic(char *msg) __attribute__((noreturn));
 u32 str_to_u32(char *this);
@@ -1300,7 +1299,6 @@ void std_og_state_add_frametime(f32 frametime);
 f32 std_og_state_get_avg_frametime(void);
 void std_og_utils_handle_sdl_events(void);
 bool std_og_internal_og_main_fn(void);
-Game game = {0};
 void *std_mem_state_allocator = NULL;
 void *(*std_mem_state_alloc_fn)(void *, u32) = std_mem_impl_my_calloc;
 void *(*std_mem_state_realloc_fn)(void *, void *, u32, u32) = std_mem_impl_my_realloc;
@@ -1752,16 +1750,16 @@ bool Game_step(Game *this) {
   return true;
 }
 
-bool step(void) {
-  return Game_step(&game);
-}
-
 i32 main(void) {
-  game=Game_make(20, 20, 0);
+  Game game = Game_make(20, 20, 0);
   std_og_init(960, 640, "RayCast", false);
   std_og_grab_input(true);
   std_og_show_cursor(false);
-  std_og_set_main_loop(step);
+  while (std_og_is_running()) {
+    if (!Game_step(&game)) {
+      break;
+    }
+  }
   std_og_quit();
 }
 
