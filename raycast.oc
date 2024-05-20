@@ -552,15 +552,17 @@ def Game::step(&this): bool {
     return true
 }
 
-let game: Game
-def step(): bool => game.step()
 
 def main() {
-    game = Game::make(20, 20, 0)
+    let game = Game::make(20, 20, 0)
     og::init(960, 640, "RayCast")
     og::grab_input(true)
     og::show_cursor(false)
-    og::set_main_loop(step)
+    while og::is_running() {
+        if not game.step() {
+            break
+        }
+    }
     og::quit()
 }
 

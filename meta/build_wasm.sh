@@ -22,4 +22,5 @@ emcc $FILE \
     --preload-file assets \
     --use-preload-plugins \
     -o build/index.js \
+    -s ASYNCIFY=1 \
     -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=0
