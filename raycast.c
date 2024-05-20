@@ -1735,13 +1735,15 @@ bool Game_step(Game *this) {
   }
   Game_draw(this);
   Game_cast_rays(this);
-  std_vec_Vec2__1 mouse = Game_to_world(this, std_og_get_mouse_pos());
-  if (((0.0f <= mouse.x) && (mouse.x < ((f32)this->cols))) && ((0.0f <= mouse.y) && (mouse.y < ((f32)this->rows)))) {
-    u32 row = ((u32)mouse.y);
-    u32 col = ((u32)mouse.x);
-    Game_highlight_cell(this, row, col);
-    if (std_og_is_mouse_pressed(SDL_BUTTON_LEFT)) {
-      Game_toggle_cell(this, row, col);
+  if (this->map_enabled) {
+    std_vec_Vec2__1 mouse = Game_to_world(this, std_og_get_mouse_pos());
+    if (((0.0f <= mouse.x) && (mouse.x < ((f32)this->cols))) && ((0.0f <= mouse.y) && (mouse.y < ((f32)this->rows)))) {
+      u32 row = ((u32)mouse.y);
+      u32 col = ((u32)mouse.x);
+      Game_highlight_cell(this, row, col);
+      if (std_og_is_mouse_pressed(SDL_BUTTON_LEFT)) {
+        Game_toggle_cell(this, row, col);
+      }
     }
   }
   if (!this->map_enabled) {
