@@ -1,51 +1,56 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en-us">
   <head>
-    <meta charset="utf-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <title>RayCast</title>
     <style>
-body {
-    font-family: "Andale Mono", monospace;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    justify-content: center;
-    flex-direction: column;
-    align-items: center;
-    margin-top: 5vh;
-    margin-bottom: 10vh;
-    background-color: #e0e0e0;
-}
+      body {
+        font-family: "Andale Mono", monospace;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 5vh;
+        margin-bottom: 10vh;
+        background-color: #e0e0e0;
+      }
 
-#canvas {
-    display: block;
-    background-color: #000;
-}
+      #canvas {
+        display: block;
+        background-color: #000;
+      }
 
-#canvas2 {
-    display: block;
-    background-color: #000;
-}
+      #canvas2 {
+        display: block;
+        background-color: #000;
+      }
 
-code {
-    background-color: #686868;
-    padding: 2pt;
-    color: #f8f8f2;
-    border-radius: 2px;
-}
+      code {
+        background-color: #686868;
+        padding: 2pt;
+        color: #f8f8f2;
+        border-radius: 2px;
+      }
 
-li {
-  margin: 4pt;
-}
-
-</style>
+      li {
+        margin: 4pt;
+      }
+    </style>
   </head>
   <body>
     <h1>Ray-casting Demo</h1>
-    <a href="https://github.com/mustafaquraish/raycasting">View Source On GitHub</a>
-    <br>
-    <p> This demo was written in the <a href="https://github.com/ocen-lang/ocen">Ocen</a>, and compiled to the web using Emscripten. </p>
+    <a href="https://github.com/mustafaquraish/raycasting"
+      >View Source On GitHub</a
+    >
+    <br />
+    <p>
+      This demo was written in the
+      <a href="https://github.com/ocen-lang/ocen">Ocen</a>, and compiled to the
+      web using Emscripten.
+    </p>
     <ul>
       <li><code>WASD</code> to move</li>
       <li><code>Left</code>/<code>Right</code>, or Mouse to rotate</li>
@@ -53,18 +58,59 @@ li {
       <li><code>,</code> or <code>.</code> to change FOV</li>
       <li><code>M</code> to open Map (use mouse to edit in map mode)</li>
     </ul>
-    <br>
-    <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+    <br />
+    <canvas
+      id="canvas"
+      oncontextmenu="event.preventDefault()"
+      tabindex="-1"
+    ></canvas>
 
-    <script type='text/javascript'>
-      var canvas = document.getElementById('canvas');
+    <script type="text/javascript">
+      var canvas = document.getElementById("canvas");
+      canvas.addEventListener(
+              "webglcontextlost",
+              (e) => {
+                alert("WebGL context lost. You will need to reload the page."),
+                  e.preventDefault();
+              },
+              !1
+            );
+
       var Module = {
+        print(...t) {
+          var n = t.join(" ");
+          console.log(n);
+        },
         canvas,
-        // preRun: [function() {
-        //   ENV.SDL_EMSCRIPTEN_KEYBOARD_ELEMENT = "#canvas";
-        // }]
+        setStatus: (e) => {
+          console.log("Status: " + e);
+        },
+        preRun: [
+          function () {
+            ENV.SDL_EMSCRIPTEN_KEYBOARD_ELEMENT = "#canvas";
+          },
+        ],
+        totalDependencies: 0,
+        monitorRunDependencies: (e) => {
+          (this.totalDependencies = Math.max(this.totalDependencies, e)),
+            Module.setStatus(
+              e
+                ? "Preparing... (" +
+                    (this.totalDependencies - e) +
+                    "/" +
+                    this.totalDependencies +
+                    ")"
+                : "All downloads complete."
+            );
+        },
       };
-      </script>
+      window.onerror = (e) => {
+        Module.setStatus("Exception thrown, see JavaScript console"),
+          (Module.setStatus = (e) => {
+            e && console.error("[post-exception status] " + e);
+          });
+      };
+    </script>
     <script async type="text/javascript" src="index.js"></script>
   </body>
 </html>
